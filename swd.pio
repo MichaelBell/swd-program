@@ -40,8 +40,8 @@ read_rsp:
     jmp y--, read_rsp [1] side 0
     in pins, 1         side 1
 
-    set x, 0x1C        side 1
-    mov y, isr         side 1
+    set x, 0x1C        side 0
+    mov y, isr         side 0
     pull               side 1
     jmp x!=y, error    side 1 ; Not OK
 
@@ -55,8 +55,60 @@ send_data:
     jmp !osre, send_data side 1
 
 .wrap_target
-    mov pins, x        side 1
-    jmp top   [1]      side 0
+    mov pins, x  [1]   side 0
+    jmp top            side 1
+
+negate:
+    mov x, ~x             side 1
+    jmp !osre, send_data  side 1
+
+; Must be identical to above, except ignoring error.
+.program swd_write_ignore_error
+.side_set 1 opt
+error:
+    irq 0            side 1
+
+top:
+    ; Wait driven
+    set pins, 0      side 1
+    set pindirs, 1   side 1
+    mov isr, null    side 1
+
+    set y, 6         side 1
+    pull             side 1
+    set pindirs, 1   side 1
+
+    ; Send 7 bits
+send_cmd:
+    out pins, 1    [1] side 0
+    jmp y--, send_cmd [1]  side 1
+    
+    set pindirs, 0     side 0
+    set y, 3           side 0
+
+    ; Read 5 bits: park, turn, rsp
+read_rsp:
+    in pins, 1   [1]   side 1
+    jmp y--, read_rsp [1] side 0
+    in pins, 1         side 1
+
+    set x, 0x1C        side 0
+    mov y, isr         side 0
+    pull               side 1
+    nop                side 1 ; Ignore
+
+    set pindirs, 1     side 1
+    set x, 0           side 1
+
+send_data:
+    out y, 1           side 0
+    mov pins, y        side 0
+    jmp y--, negate    side 1
+    jmp !osre, send_data side 1
+
+.wrap_target
+    mov pins, x  [1]   side 0
+    jmp top            side 1
 
 negate:
     mov x, ~x             side 1
@@ -97,15 +149,14 @@ read_rsp:
     jmp x!=y, error    side 1 ; Not OK
 
     ; Read 32 bits
-    set y, 31          side 1
+    set y, 31  [1]     side 0
 read_data:
-    in pins, 1   [1]   side 0
-    jmp y--, read_data [1] side 1
+    in pins, 1   [1]   side 1
+    jmp y--, read_data [1] side 0
 
     ; Ignore parity and turn
-    mov isr, ::isr [1] side 0
-    push         [1]   side 1
-    nop [1] side 0
+    mov isr, ::isr [1] side 1
+    push         [1]   side 0
 
 .program swd_raw_write
 .side_set 1 opt
