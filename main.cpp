@@ -2,7 +2,12 @@
 #include "pico/multicore.h"
 #include "stdio.h"
 #include "swd.pio.h"
+#include "blink.h"
+#include <algorithm>
 
+uint watchdog_data[4] = {0xb007c0d3, 0x6ff83f2c, 0x20042000, 0x20000001};
+
+#if CORE1_LOGIC_ANALYSE
 uint data[64] = {0};
 
 void core1_entry() {
@@ -22,6 +27,7 @@ void core1_entry() {
         while (gpio_get(2) == 0);
     }
 }
+#endif
 
 static uint pio_offset;
 static uint pio_sm;
@@ -62,7 +68,7 @@ bool write_cmd(uint cmd, uint data) {
     return true;
 }
 
-bool write_block(uint addr, uint* data, uint len_in_words) {
+bool write_block(uint addr, const uint* data, uint len_in_words) {
     if (!write_cmd(0x0B, addr)) return false;
     for (uint i = 0; i < len_in_words; ++i) {
         if (!write_cmd(0x3B, *data++)) return false;
@@ -101,14 +107,18 @@ void idle() {
     pio_sm_put_blocking(pio0, pio_sm, 0);
 }
 
-bool connect() {
-    pio_prog = &swd_raw_write_program;
-    pio_offset = pio_add_program(pio0, &swd_raw_write_program);
-    pio_sm = pio_claim_unused_sm(pio0, true);
+bool connect(bool first = true) {
+    if (first) {
+        pio_prog = &swd_raw_write_program;
+        pio_offset = pio_add_program(pio0, &swd_raw_write_program);
+        pio_sm = pio_claim_unused_sm(pio0, true);
 
-    swd_initial_init(pio0, pio_sm, 2, 3);
+        swd_initial_init(pio0, pio_sm, 2, 3);
 
-    swd_raw_program_init(pio0, pio_sm, pio_offset, 2, 3, false);
+        swd_raw_program_init(pio0, pio_sm, pio_offset, 2, 3, false);
+    } else {
+        switch_program(false, true);
+    }
 
     // Begin transaction: 8 clocks, data low
     printf("Begin transaction\n");
@@ -196,12 +206,13 @@ bool connect() {
     }
 
     printf("Halt CPU\n");
-    if (!write_reg(0xe000edf4, 0xA05F0003)) {
+    if (!write_reg(0xe000edf0, 0xA05F0003)) {
         printf("Halt failed\n");
     }
 
     idle();
 
+#if 0
     uint mem_value;
     if (!read_reg(0x20000000, mem_value)) {
         printf("Read reg failed\n");
@@ -250,7 +261,144 @@ bool connect() {
         printf("Read reg failed\n");
     }
     printf("Mem: %08x\n", mem_value);
+#endif
 
+    return true;
+}
+
+bool load(uint address, const uint* data, uint len_in_bytes) {
+    printf("Loading %d bytes at %08x\n", len_in_bytes, address);
+    idle();
+
+    printf("Halt CPU\n");
+    if (!write_reg(0xe000edf0, 0xA05F0003)) {
+        printf("Halt failed\n");
+        return false;
+    }
+
+    idle();
+
+    constexpr uint BLOCK_SIZE = 1024;
+    for (int i = 0; i < len_in_bytes; i += BLOCK_SIZE) {
+        uint block_len_in_words = std::min(BLOCK_SIZE >> 2, (len_in_bytes - i) >> 2);
+        if (!write_block(address + i, &data[i >> 2], block_len_in_words)) {
+            printf("Block write failed\n");
+            return false;
+        }
+    }
+
+    for (int j = 0; j < len_in_bytes; j += 4) {
+        uint check_data;
+        if (!read_reg(address + j, check_data)) {
+            printf("Read failed\n");
+            return false;
+        }
+        if (check_data != data[j >> 2]) {
+            printf("Verify failed at %08x, %08x != %08x\n", address + j, check_data, data[j >> 2]);
+            return false;
+        }
+    } 
+
+    idle();
+
+    return true;
+}
+
+bool start(uint pc = 0x20000001) {
+    idle();
+
+    printf("Setup watchdog\n");
+    if (!write_block(0x4005801c, watchdog_data, 4)) {
+        printf("Setup watchdog failed\n");
+        return false;
+    }
+
+    printf("Set PC\n");
+    if (!write_reg(0xe000edf8, pc) ||
+        !write_reg(0xe000edf4, 0x1000F))
+    {
+        printf("Failed to set PC\n");
+        return false;
+    }
+    printf("Set SP\n");
+    if (!write_reg(0xe000edf8, 0x20042000) ||
+        !write_reg(0xe000edf4, 0x1000D))
+    {
+        printf("Failed to set PC\n");
+        return false;
+    }
+    idle();
+
+    uint data;
+    write_reg(0xe000edf4, 0x0000F);
+    idle();
+    read_reg(0xe000edf8, data);
+    printf("Set PC to %08x\n", data);
+
+    for (int i = 0; i < 16; ++i) {
+        write_reg(0xe000edf4, i);
+        idle();
+        read_reg(0xe000edf8, data);
+        printf("R%d is %08x\n", i, data);
+    }
+
+    for (int i = 0; i < 4; ++i) {
+        read_reg(0x4005801c + 4*i, data);
+        printf("WD%d is %08x\n", i, data);
+    }
+
+    //write_reg(0x40010008, 0xC000);
+
+    printf("Start CPU\n");
+    if (!write_reg(0xe000edf0, 0xA05F0001)) {
+        printf("Start failed\n");
+        return false;
+    }
+
+    idle();
+
+    //write_reg(0x40058000, 0x80000000);
+    //write_reg(0xe000edf0, 0xA05F0000);
+
+    //connect(false);
+#if 0
+    for (int j = 0; j < 10; ++j) {
+        sleep_ms(1);
+        for (int i = 0; i < 16; ++i) {
+            write_reg(0xe000edf4, i);
+            idle();
+            read_reg(0xe000edf8, data);
+            printf("R%d is %08x\n", i, data);
+        }
+        idle();
+        write_reg(0xe000edf0, 0xA05F000D);
+    }
+#endif
+    
+#if 0
+    sleep_ms(1000);
+    idle();
+    printf("Halt CPU\n");
+    if (!write_reg(0xe000edf0, 0xA05F0003)) {
+        printf("Halt failed\n");
+        return false;
+    }
+    write_reg(0xe000edf4, 0x0000F);
+    idle();
+    read_reg(0xe000edf8, data);
+    printf("PC is %08x\n", data);
+
+    for (int i = 0; i < 16; ++i) {
+        write_reg(0xe000edf4, i);
+        idle();
+        read_reg(0xe000edf8, data);
+        printf("R%d is %08x\n", i, data);
+    }
+    for (int i = 0; i < 4; ++i) {
+        read_reg(0x4005801c + 4*i, data);
+        printf("WD%d is %08x\n", i, data);
+    }
+#endif
     return true;
 }
 
@@ -262,20 +410,36 @@ int main() {
     gpio_disable_pulls(2);
     gpio_pull_up(3);
 
+#ifdef CORE1_LOGIC_ANALYSE
     multicore_launch_core1(core1_entry);
+#endif
 
     sleep_ms(4000);
 
-    printf("Starting\n");
+    printf("Connecting\n");
 
     bool ok = connect();
 
-    printf("Connect %s\n", ok ? "OK" : "Fail");
+    printf("Connected %s\n", ok ? "OK" : "Fail");
 
+    if (ok) {
+        ok = load(elf_data0_addr, elf_data0, sizeof(elf_data0));
+    }
+
+    if (ok) {
+        ok = load(elf_data1_addr, elf_data1, sizeof(elf_data1));
+    }
+
+    if (ok) {
+        start();
+    }
+
+#ifdef CORE1_LOGIC_ANALYSE
     for (int i = 0; i < 64; ++i) {
         printf("%08x ", data[i]);
         if ((i & 7) == 7) printf("\n");
     }
+#endif
 
     while(1);
 }

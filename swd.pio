@@ -197,7 +197,7 @@ void swd_program_init(PIO pio, uint sm, uint offset, uint swc, uint swd, bool re
     sm_config_set_out_pins(&c, swd, 1);
     sm_config_set_out_shift(&c, true, false, 32);
     sm_config_set_sideset_pins(&c, swc);
-    sm_config_set_clkdiv(&c, 600.f);
+    sm_config_set_clkdiv(&c, 60.f);
 
     pio_sm_init(pio, sm, offset, &c);
     pio_sm_set_enabled(pio, sm, true);
@@ -211,7 +211,7 @@ void swd_raw_program_init(PIO pio, uint sm, uint offset, uint swc, uint swd, boo
     sm_config_set_out_pins(&c, swd, 1);
     sm_config_set_out_shift(&c, true, true, 32);
     sm_config_set_sideset_pins(&c, swc);
-    sm_config_set_clkdiv(&c, 600.f);
+    sm_config_set_clkdiv(&c, 60.f);
 
     pio_sm_init(pio, sm, offset, &c);
     pio_sm_set_enabled(pio, sm, true);
