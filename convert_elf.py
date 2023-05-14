@@ -4,7 +4,7 @@ dumped_elf = open("dump.txt", "r")
 in_section = False
 in_array = False
 array_num = 0
-print_sections = (".text", ".rodata", ".binary_info", ".data")
+print_sections = (".text", ".rodata", ".binary_info", ".data", ".scratch_x", ".scratch_y", ".usb_ram")
 address = 0
 for line in dumped_elf:
   if line.startswith("Contents of section"):
@@ -36,3 +36,16 @@ for line in dumped_elf:
 
 if in_array:
   print("};")
+
+print("const uint section_addresses[] = {")
+for i in range(array_num):
+  print("elf_data{}_addr,".format(i))
+print("};")
+print("const uint* section_data[] = {")
+for i in range(array_num):
+  print("elf_data{},".format(i))
+print("};")
+print("const uint section_data_len[] = {")
+for i in range(array_num):
+  print("sizeof(elf_data{}),".format(i))
+print("};")

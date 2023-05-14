@@ -1993,3 +1993,15 @@ const uint elf_data1[] = {
 0x200018a9,
 0x200019c9,
 };
+const uint section_addresses[] = {
+elf_data0_addr,
+elf_data1_addr,
+};
+const uint* section_data[] = {
+elf_data0,
+elf_data1,
+};
+const uint section_data_len[] = {
+sizeof(elf_data0),
+sizeof(elf_data1),
+};
