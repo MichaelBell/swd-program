@@ -6,7 +6,7 @@
 #include "blink.h"
 #include <algorithm>
 
-uint watchdog_data[4] = {0xb007c0d3, 0x6ff83f2c, 0x20042000, 0x20000001};
+//uint watchdog_data[4] = {0xb007c0d3, 0x6ff83f2c, 0x20042000, 0x20000001};
 
 #if CORE1_LOGIC_ANALYSE
 uint data[64] = {0};
@@ -33,7 +33,7 @@ void core1_entry() {
 int main() {
     stdio_init_all();
 
-    sleep_ms(4000);
+    sleep_ms(100);
 
     swd_load_program(section_addresses, section_data, section_data_len, sizeof(section_addresses) / sizeof(section_addresses[0]));
 

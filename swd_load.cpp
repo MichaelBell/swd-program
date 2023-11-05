@@ -196,12 +196,14 @@ static bool load(uint address, const uint* data, uint len_in_bytes) {
     idle();
 
     constexpr uint BLOCK_SIZE = 1024;
-    for (int i = 0; i < len_in_bytes; i += BLOCK_SIZE) {
-        uint block_len_in_words = std::min(BLOCK_SIZE >> 2, (len_in_bytes - i) >> 2);
+    uint block_len_in_words = std::min((BLOCK_SIZE - (address & (BLOCK_SIZE - 1))) >> 2, len_in_bytes >> 2);
+    for (uint i = 0; i < len_in_bytes; ) {
         if (!write_block(address + i, &data[i >> 2], block_len_in_words)) {
             printf("Block write failed\n");
             return false;
         }
+        i += block_len_in_words << 2;
+        block_len_in_words = std::min(BLOCK_SIZE >> 2, (len_in_bytes - i) >> 2);
     }
 
     for (int j = 0; j < len_in_bytes; j += 4) {
@@ -214,7 +216,7 @@ static bool load(uint address, const uint* data, uint len_in_bytes) {
             printf("Verify failed at %08x, %08x != %08x\n", address + j, check_data, data[j >> 2]);
             return false;
         }
-    } 
+    }
 
     idle();
 
